@@ -19,6 +19,53 @@ What this means in practice:
 - It does not stress the memory subsystem (that's the separate mem stressor), the FPU, or SIMD units
 - The 10ms window is coarse enough that the OS scheduler sees smooth load, but fine enough that it responds quickly to changes
 
-## NOTE
+### NOTE
 
 In Windows, `time.Sleep` has ~15ms default resolution, so very low CPU percentages (< 10%) will be less precise.
+
+## Build
+
+### Linux
+
+```sh
+go build -o stress .
+```
+
+### Windows (cross-compile from Linux)
+
+```sh
+GOOS=windows GOARCH=amd64 go build -o stress.exe .
+```
+
+### ARM64 Linux (e.g. Graviton, Apple Silicon)
+
+```sh
+GOARCH=arm64 go build -o stress .
+```
+
+## Usage
+￼
+```sh
+# 4 cores at 75% load, hold 50% of RAM, for 2 minutes
+./stress --cpu-cores 4 --cpu-percent 75 --mem-percent 50 --duration 2m
+
+# All cores at 100%, no memory, until Ctrl-C/SIGTERM
+./stress --cpu-cores 0 --cpu-percent 100
+
+# Memory-only pressure (30% RAM), with progress output
+./stress --cpu-cores 0 --mem-percent 30 --duration 1m --verbose
+```
+
+### Ansible task
+￼
+```yaml
+- name: Run stress test for 5 minutes
+  command: >
+    /opt/stress
+    --cpu-cores 4
+    --cpu-percent 80
+    --mem-percent 40
+    --duration 5m
+  async: 360      # slightly longer than duration
+  poll: 10
+```
