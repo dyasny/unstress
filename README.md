@@ -44,7 +44,7 @@ GOARCH=arm64 go build -o stress .
 ```
 
 ## Usage
-￼
+
 ```sh
 # 4 cores at 75% load, hold 50% of RAM, for 2 minutes
 ./stress --cpu-cores 4 --cpu-percent 75 --mem-percent 50 --duration 2m
@@ -57,7 +57,7 @@ GOARCH=arm64 go build -o stress .
 ```
 
 ### Ansible task
-￼
+
 ```yaml
 - name: Run stress test for 5 minutes
   command: >
