@@ -1,15 +1,15 @@
-name: Build and Release
+name: Release
 
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
 
 jobs:
-  build-and-release:
+  build:
     runs-on: ubuntu-latest
 
     strategy:
@@ -17,19 +17,20 @@ jobs:
         include:
           - goos: linux
             goarch: amd64
-            extension: ""
+            ext: ""
           - goos: windows
             goarch: amd64
-            extension: ".exe"
+            ext: ".exe"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: true
 
       - name: Build
         env:
@@ -38,35 +39,17 @@ jobs:
           CGO_ENABLED: 0
         run: |
           APP_NAME=$(basename "$GITHUB_REPOSITORY")
+
           mkdir -p dist
 
           go build \
             -trimpath \
             -ldflags="-s -w" \
-            -o "dist/${APP_NAME}-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.extension }}" \
+            -o "dist/${APP_NAME}-${GITHUB_REF_NAME}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" \
             .
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v3
         with:
-          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*
-
-  release:
-    needs: build-and-release
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/**/*.*
+          files: dist/*
           generate_release_notes: true
