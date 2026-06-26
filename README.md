@@ -4,7 +4,7 @@ Simple cross platform stress generator for CPU and RAM - general-purpose, percen
 
 ## Memory mechanism 
 
-Allocate a `[]byte` of the target size, then touch every 4 KiB page to force physical backing (not just virtual address reservation). A background goroutine re-dirties pages every 500ms to prevent the OS from reclaiming them under pressure.
+Allocate a `[]byte` of the target size, then touch every 4 KiB page to force physical backing (not just virtual address reservation). A background goroutine re-dirties pages on a configurable interval (default 500ms) to prevent the OS from reclaiming or deduplicating them under pressure. Each page receives unique random content so that KSM and other deduplication mechanisms cannot merge pages.
 
 ## CPU mechanism
 
@@ -54,7 +54,21 @@ GOARCH=arm64 go build -o stress .
 
 # Memory-only pressure (30% RAM), with progress output
 ./stress --cpu-cores 0 --mem-percent 30 --duration 1m --verbose
+
+# Reduce re-dirty overhead for a very large allocation
+./stress --mem-percent 80 --mem-retouch-interval 2s --duration 10m
 ```
+
+### Flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `--cpu-cores` | all cores | Number of cores to stress. `0` = use all logical cores. |
+| `--cpu-percent` | `100` | Target CPU load per core, 0–100. |
+| `--mem-percent` | `0` | Percentage of total RAM to hold, 0–100. `0` = disabled. |
+| `--mem-retouch-interval` | `500ms` | How often to re-dirty held memory pages. Lower values give a stronger hold; higher values reduce overhead on large allocations. Accepts Go duration strings: `100ms`, `2s`, `1m`. |
+| `--duration` | `0` | How long to run, e.g. `30s`, `5m`, `1h`. `0` = run until SIGINT/SIGTERM. |
+| `--verbose` | `false` | Print a progress line every second. |
 
 ### Ansible task
 

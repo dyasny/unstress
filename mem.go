@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -11,16 +12,12 @@ import (
 // physical RAM; writing to every byte would be slower with no benefit.
 const pageSize = 4096
 
-// reTouchInterval controls how often we re-dirty the held memory.
-// Modern OSes can reclaim clean anonymous pages under pressure; keeping
-// them dirty prevents that. 500 ms is conservative; increase to 2–5 s
-// for lower overhead on very large allocations.
-const reTouchInterval = 500 * time.Millisecond
-
 // startMemoryStressor allocates `targetBytes` of memory, touches every
 // page to guarantee physical allocation, then periodically re-dirties the
 // pages so the OS cannot silently reclaim them.
-func startMemoryStressor(targetBytes uint64, stop <-chan struct{}, wg *sync.WaitGroup) error {
+// retouchInterval controls how often re-dirtying happens; 500 ms is a safe
+// default — increase to 2–5 s to reduce overhead on very large allocations.
+func startMemoryStressor(targetBytes uint64, retouchInterval time.Duration, stop <-chan struct{}, wg *sync.WaitGroup) error {
 	if targetBytes == 0 {
 		return nil
 	}
@@ -41,7 +38,7 @@ func startMemoryStressor(targetBytes uint64, stop <-chan struct{}, wg *sync.Wait
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		memWorker(buf, stop)
+		memWorker(buf, retouchInterval, stop)
 	}()
 
 	return nil
@@ -59,18 +56,29 @@ func allocate(n uint64) (buf []byte, err error) {
 	return buf, nil
 }
 
-// touchAll writes one byte to every OS page in buf, forcing the kernel to
+// touchAll writes unique data to every OS page in buf, forcing the kernel to
 // back each page with a physical frame (page fault on first write).
+// Each page gets its index encoded into the first 8 bytes so that no two
+// pages are byte-for-byte identical; identical content is the precondition
+// for KSM and other deduplication to merge pages.
 func touchAll(buf []byte) {
 	for i := 0; i < len(buf); i += pageSize {
-		buf[i] = 0xAA
+		idx := uint64(i / pageSize)
+		buf[i+0] = byte(idx)
+		buf[i+1] = byte(idx >> 8)
+		buf[i+2] = byte(idx >> 16)
+		buf[i+3] = byte(idx >> 24)
+		buf[i+4] = byte(idx >> 32)
+		buf[i+5] = byte(idx >> 40)
+		buf[i+6] = byte(idx >> 48)
+		buf[i+7] = byte(idx >> 56)
 	}
 }
 
 // memWorker keeps the allocation live and periodically re-dirties pages
 // so the OS cannot silently swap or reclaim them.
-func memWorker(buf []byte, stop <-chan struct{}) {
-	ticker := time.NewTicker(reTouchInterval)
+func memWorker(buf []byte, retouchInterval time.Duration, stop <-chan struct{}) {
+	ticker := time.NewTicker(retouchInterval)
 	defer ticker.Stop()
 
 	// Track position for a rolling re-touch: on each tick we dirty the
@@ -92,8 +100,21 @@ func memWorker(buf []byte, stop <-chan struct{}) {
 			if end > len(buf) {
 				end = len(buf)
 			}
+			// A random seed per tick XOR'd with the page index gives each page
+			// unique content that also changes every round, defeating KSM (which
+			// only merges byte-for-byte identical pages) and preventing the kernel
+			// from treating the pages as clean/reclaimable.
+			seed := rand.Uint64()
 			for i := pos; i < end; i += pageSize {
-				buf[i]++ // increment to ensure a dirty write, not a no-op store
+				val := seed ^ uint64(i/pageSize)
+				buf[i+0] = byte(val)
+				buf[i+1] = byte(val >> 8)
+				buf[i+2] = byte(val >> 16)
+				buf[i+3] = byte(val >> 24)
+				buf[i+4] = byte(val >> 32)
+				buf[i+5] = byte(val >> 40)
+				buf[i+6] = byte(val >> 48)
+				buf[i+7] = byte(val >> 56)
 			}
 			pos = end % len(buf)
 		}

@@ -30,11 +30,12 @@ import (
 
 func main() {
 	var (
-		cpuCores   = flag.Int("cpu-cores", runtime.NumCPU(), "cores to stress; 0 = all cores")
-		cpuPercent = flag.Int("cpu-percent", 100, "target CPU load per core, 0-100")
-		memPercent = flag.Int("mem-percent", 0, "percentage of total RAM to hold, 0-100; 0 = disabled")
-		duration   = flag.Duration("duration", 0, "how long to run, e.g. 30s, 5m, 1h; 0 = until signal")
-		verbose    = flag.Bool("verbose", false, "print progress updates every second")
+		cpuCores        = flag.Int("cpu-cores", runtime.NumCPU(), "cores to stress; 0 = all cores")
+		cpuPercent      = flag.Int("cpu-percent", 100, "target CPU load per core, 0-100")
+		memPercent      = flag.Int("mem-percent", 0, "percentage of total RAM to hold, 0-100; 0 = disabled")
+		memReTouchIntvl = flag.Duration("mem-retouch-interval", 500*time.Millisecond, "how often to re-dirty held memory pages; lower = stronger hold, higher = less overhead")
+		duration        = flag.Duration("duration", 0, "how long to run, e.g. 30s, 5m, 1h; 0 = until signal")
+		verbose         = flag.Bool("verbose", false, "print progress updates every second")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: stress [options]\n\nOptions:\n")
@@ -51,6 +52,9 @@ func main() {
 	}
 	if *memPercent < 0 || *memPercent > 100 {
 		fatalf("--mem-percent must be between 0 and 100")
+	}
+	if *memReTouchIntvl <= 0 {
+		fatalf("--mem-retouch-interval must be > 0")
 	}
 	if *cpuCores == 0 {
 		*cpuCores = runtime.NumCPU()
@@ -70,6 +74,9 @@ func main() {
 	fmt.Printf("  cpu-cores:    %d\n", *cpuCores)
 	fmt.Printf("  cpu-percent:  %d%%\n", *cpuPercent)
 	fmt.Printf("  mem-percent:  %d%% (%s)\n", *memPercent, formatBytes(targetMem))
+	if *memPercent > 0 {
+		fmt.Printf("  mem-retouch:  %s\n", *memReTouchIntvl)
+	}
 	if *duration > 0 {
 		fmt.Printf("  duration:     %s\n", *duration)
 	} else {
@@ -82,7 +89,7 @@ func main() {
 
 	// ── Memory stressor ───────────────────────────────────────────────────
 	if *memPercent > 0 {
-		if err := startMemoryStressor(targetMem, stop, &wg); err != nil {
+		if err := startMemoryStressor(targetMem, *memReTouchIntvl, stop, &wg); err != nil {
 			fatalf("memory stressor: %v", err)
 		}
 	}
