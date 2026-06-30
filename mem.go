@@ -63,6 +63,12 @@ func allocate(n uint64) (buf []byte, err error) {
 // for KSM and other deduplication to merge pages.
 func touchAll(buf []byte) {
 	for i := 0; i < len(buf); i += pageSize {
+		// Handle case where last page is smaller than pageSize
+        if i+8 >= len(buf) {
+			// We don't have enough space for a full 8-byte encoding
+        	// Skip this partial page - don't write anything
+        	break
+        }
 		idx := uint64(i / pageSize)
 		buf[i+0] = byte(idx)
 		buf[i+1] = byte(idx >> 8)
@@ -106,6 +112,11 @@ func memWorker(buf []byte, retouchInterval time.Duration, stop <-chan struct{}) 
 			// from treating the pages as clean/reclaimable.
 			seed := rand.Uint64()
 			for i := pos; i < end; i += pageSize {
+				// Check if we have enough space for 8 bytes (i through i+7)
+				if i+8 > len(buf) {
+					// Not enough space for a full 8-byte encoding, skip this page
+					break
+				}
 				val := seed ^ uint64(i/pageSize)
 				buf[i+0] = byte(val)
 				buf[i+1] = byte(val >> 8)
